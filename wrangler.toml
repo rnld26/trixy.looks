@@ -1,0 +1,14 @@
+# ============================================================
+#  TRIXY.LOOKS — wrangler.toml
+#  Tambahkan/ganti bagian [[kv_namespaces]] di file kamu
+# ============================================================
+
+name = "trixylooks"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# ── Tambahkan bagian ini ke wrangler.toml kamu ──────────────
+[[kv_namespaces]]
+binding = "TRIXY_KV"
+id = "fc5dee2ae574487db3dbb3365e4315aa"       # ← hasil dari step 1 nanti
+# preview_id = "GANTI_DENGAN_KV_PREVIEW_ID"  # opsional untuk dev lokal
