@@ -4,7 +4,7 @@
 //  ⚠️  GANTI: CORRECT_PIN dan KV ID di wrangler.toml
 // ============================================================
 
-const CORRECT_PIN = "222615"; // <-- GANTI PIN DI SINI
+const CORRECT_PIN = "2226"; // <-- GANTI PIN DI SINI
 
 const HTML = `<!DOCTYPE html>
 <html lang="id">
