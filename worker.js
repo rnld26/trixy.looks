@@ -1,7 +1,4 @@
-// ============================================================
-//  TRIXY.LOOKS — Cloudflare Worker v6.1
-//  ⚠️  GANTI PIN di baris bawah ini
-// ============================================================
+// TRIXY.LOOKS — Cloudflare Worker v7
 const CORRECT_PIN = "2226";
 const HTML = `<!DOCTYPE html>
 <html lang="id">
@@ -418,6 +415,7 @@ tr:hover td{background:#FFF5FB}
       <div class="stat-card orange"><div class="stat-label">Total Admin Shopee</div><div class="stat-value orange mono" id="st-admin">Rp 0</div></div>
       <div class="stat-card purple"><div class="stat-label">Total Pengeluaran</div><div class="stat-value purple mono" id="st-pengeluaran">Rp 0</div></div>
       <div class="stat-card green"><div class="stat-label">Laba Bersih</div><div class="stat-value green mono" id="st-laba-bersih">Rp 0</div></div>
+      <div class="stat-card teal"><div class="stat-label">Rata-rata Laba/Baju</div><div class="stat-value teal mono" id="st-avg-laba">Rp 0</div><div class="stat-sub" id="st-avg-qty">0 pcs</div></div>
     </div>
     <div class="card">
       <div class="flex-between" style="margin-bottom:14px">
@@ -425,7 +423,10 @@ tr:hover td{background:#FFF5FB}
         <button class="btn btn-teal btn-sm" onclick="exportCSV()">⬇️ Export CSV</button>
       </div>
       <div class="filter-bar">
-        <div class="range-filter"><input type="date" id="trx-dari" oninput="renderTransaksi()"><span>—</span><input type="date" id="trx-sampai" oninput="renderTransaksi()"></div>
+        <select id="trx-bulan" onchange="setTrxBulan(this.value)" style="max-width:160px;padding:7px 12px;font-size:12px">
+          <option value="">📅 Pilih Bulan...</option>
+        </select>
+        <div class="range-filter"><input type="date" id="trx-dari" oninput="clearTrxBulan();renderTransaksi()"><span>—</span><input type="date" id="trx-sampai" oninput="clearTrxBulan();renderTransaksi()"></div>
         <div class="filter-chip active" onclick="setTrxFilter('all',this)">Semua</div>
         <div class="filter-chip" onclick="setTrxFilter('pemasukan',this)">💰 Pemasukan</div>
         <div class="filter-chip" onclick="setTrxFilter('pengeluaran',this)">💸 Pengeluaran</div>
@@ -445,7 +446,10 @@ tr:hover td{background:#FFF5FB}
     <div class="card" style="padding:14px 16px;margin-bottom:14px">
       <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.6px">🔎 Filter Periode</div>
       <div class="filter-bar" style="margin-bottom:0">
-        <div class="range-filter"><input type="date" id="an-dari" oninput="renderAnalitik()"><span>—</span><input type="date" id="an-sampai" oninput="renderAnalitik()"></div>
+        <select id="an-bulan" onchange="setAnBulan(this.value)" style="max-width:160px;padding:7px 12px;font-size:12px">
+          <option value="">📅 Pilih Bulan...</option>
+        </select>
+        <div class="range-filter"><input type="date" id="an-dari" oninput="clearAnBulan();renderAnalitik()"><span>—</span><input type="date" id="an-sampai" oninput="clearAnBulan();renderAnalitik()"></div>
         <div class="filter-chip active" onclick="setAnFilter('all',this)">Semua</div>
         <div class="filter-chip" onclick="setAnFilter('pemasukan',this)">💰 Pemasukan</div>
         <div class="filter-chip" onclick="setAnFilter('pengeluaran',this)">💸 Pengeluaran</div>
@@ -714,7 +718,8 @@ function renderSellRows(){
   const ratio=getSplitRatio();
   c.innerHTML=sellRows.map(row=>{
     const p=produk.find(x=>x.id===row.produkId);
-    const opts=produk.map(pr=>\`<option value="\${pr.id}" \${pr.id===row.produkId?'selected':''}>\${pr.nama} — \${rp(pr.hargaJual)}</option>\`).join('');
+    const availProduk=produk.filter(pr=>pr.stok>0||pr.id===row.produkId);
+    const opts=availProduk.map(pr=>\`<option value="\${pr.nama} — \${rp(pr.hargaJual)}" data-id="\${pr.id}">\${pr.nama} (stok:\${pr.stok})</option>\`).join('');
     const res=p?calcItemResult(p.hargaJual,p.modalTotal,row.qty,row.adminPct,row.pendapatanPcs,payMode,ratio):null;
     const subtotalTxt=p?rp(p.hargaJual*row.qty):'—';
     const adminInfoTxt=res&&res.adminRp>0?res.adminPctActual.toFixed(2)+'% = '+rp(res.adminRp):(payMode==='cash'?'Tidak ada admin':'—');
@@ -723,9 +728,15 @@ function renderSellRows(){
     const pendapatanVal=row.pendapatanPcs>0?row.pendapatanPcs:'';
     return\`<div class="sell-row">
       <div class="sell-row-header">
-        <select onchange="updateSellRow('\${row.id}','produkId',this.value)">
-          <option value="">-- Pilih Produk --</option>\${opts}
-        </select>
+        <div style="position:relative;flex:2;min-width:140px">
+          <input type="text" list="produk-list-\${row.id}" 
+            value="\${p?p.nama+' — '+rp(p.hargaJual):''}"
+            placeholder="Ketik nama produk..."
+            onchange="onSellProdukSearch(this,'\${row.id}')"
+            oninput="onSellProdukSearch(this,'\${row.id}')"
+            style="width:100%;padding:9px 12px;border:2px solid var(--border);border-radius:var(--radius-sm);background:#FBF5FF;font-family:'Nunito',sans-serif;font-size:13px;font-weight:600;outline:none">
+          <datalist id="produk-list-\${row.id}">\${opts}</datalist>
+        </div>
         <input type="number" class="qty-input" value="\${row.qty}" min="1" oninput="updateSellRow('\${row.id}','qty',this.value)" style="width:76px">
         <button class="btn btn-danger" onclick="hapusSellRow('\${row.id}')">✕</button>
       </div>
@@ -1018,14 +1029,25 @@ function renderTransaksi(){
   if(trxFilterMode!=='pemasukan')transaksiKel.forEach(t=>all.push({...t,type:'kel'}));
   all.sort((a,b)=>b.tanggal.localeCompare(a.tanggal));
   if(dari||sampai)all=all.filter(x=>inRange(x.tanggal,dari,sampai));
-  const tp=transaksiJual.reduce((s,t)=>s+t.total,0);
-  const ta=transaksiJual.reduce((s,t)=>s+(t.adminTotal||0),0);
-  const tk=transaksiKel.reduce((s,t)=>s+t.jumlah,0);
-  const tl=transaksiJual.reduce((s,t)=>s+t.laba,0)-tk;
-  document.getElementById('st-pemasukan').textContent=rp(tp);
+  // stats follow the active filter (range + type)
+  const filtJual=transaksiJual.filter(t=>inRange(t.tanggal,dari,sampai));
+  const filtKel=transaksiKel.filter(t=>inRange(t.tanggal,dari,sampai));
+  const showPm=trxFilterMode!=='pengeluaran', showKel=trxFilterMode!=='pemasukan';
+  const tp=(showPm?filtJual:transaksiJual.filter(t=>inRange(t.tanggal,dari,sampai))).reduce((s,t)=>s+t.total,0);
+  const ta=(showPm?filtJual:[]).reduce((s,t)=>s+(t.adminTotal||0),0);
+  const tk=(showKel?filtKel:[]).reduce((s,t)=>s+t.jumlah,0);
+  const tl=filtJual.reduce((s,t)=>s+t.laba,0)-filtKel.reduce((s,t)=>s+t.jumlah,0);
+  // avg laba per item
+  const totalQty=filtJual.reduce((s,t)=>s+t.items.reduce((q,i)=>q+i.qty,0),0);
+  const avgLaba=totalQty>0?filtJual.reduce((s,t)=>s+t.laba,0)/totalQty:0;
+  document.getElementById('st-pemasukan').textContent=rp(showPm?tp:0);
   document.getElementById('st-admin').textContent=rp(ta);
-  document.getElementById('st-pengeluaran').textContent=rp(tk);
-  const le=document.getElementById('st-laba-bersih');le.textContent=rp(tl);le.className='stat-value mono '+(tl>=0?'green':'red');
+  document.getElementById('st-pengeluaran').textContent=rp(showKel?tk:0);
+  const le=document.getElementById('st-laba-bersih');
+  const labaBersih=filtJual.reduce((s,t)=>s+t.laba,0)-filtKel.reduce((s,t)=>s+t.jumlah,0);
+  le.textContent=rp(labaBersih);le.className='stat-value mono '+(labaBersih>=0?'green':'red');
+  const avgEl=document.getElementById('st-avg-laba');
+  if(avgEl){avgEl.textContent=rp(avgLaba);document.getElementById('st-avg-qty').textContent=totalQty+' pcs';}
   const pages=Math.ceil(all.length/TRX_PER_PAGE)||1;
   if(trxPage>pages)trxPage=1;
   const slice=all.slice((trxPage-1)*TRX_PER_PAGE,trxPage*TRX_PER_PAGE);
@@ -1129,15 +1151,69 @@ function guardNumericInput(el){
   if(el.value!==raw) el.value=raw; // remove any non-digit without reformatting
 }
 
+// ── MONTH FILTER HELPERS ─────────────────────────
+function buildMonthOptions(selId){
+  const sel=document.getElementById(selId);if(!sel)return;
+  // collect all months from data
+  const months=new Set();
+  [...transaksiJual,...transaksiKel].forEach(t=>months.add(t.tanggal.slice(0,7)));
+  const sorted=[...months].sort().reverse();
+  sel.innerHTML='<option value="">📅 Pilih Bulan...</option>';
+  sorted.forEach(m=>{
+    const [y,mo]=m.split('-');
+    const label=new Date(y,mo-1,1).toLocaleDateString('id-ID',{month:'long',year:'numeric'});
+    sel.innerHTML+=\`<option value="\${m}">\${label}</option>\`;
+  });
+}
+function setTrxBulan(val){
+  if(!val)return;
+  const [y,m]=val.split('-');
+  const lastDay=new Date(y,m,0).getDate();
+  document.getElementById('trx-dari').value=val+'-01';
+  document.getElementById('trx-sampai').value=val+'-'+String(lastDay).padStart(2,'0');
+  trxPage=1;renderTransaksi();
+}
+function clearTrxBulan(){document.getElementById('trx-bulan').value='';}
+function setAnBulan(val){
+  if(!val)return;
+  const [y,m]=val.split('-');
+  const lastDay=new Date(y,m,0).getDate();
+  document.getElementById('an-dari').value=val+'-01';
+  document.getElementById('an-sampai').value=val+'-'+String(lastDay).padStart(2,'0');
+  renderAnalitik();
+}
+function clearAnBulan(){document.getElementById('an-bulan').value='';}
+
+// ── SEARCHABLE PRODUK HELPER ─────────────────────
+function onSellProdukSearch(el,rowId){
+  const val=el.value.trim();
+  // find matching product by name display string
+  const found=produk.find(p=>{
+    const display=p.nama+' — '+rp(p.hargaJual);
+    return display===val||p.nama===val;
+  });
+  if(found){
+    updateSellRow(rowId,'produkId',found.id);
+  }
+  // if no match yet, just update display — wait for blur or explicit match
+}
+
 // ── INIT ──
 document.getElementById('j-tanggal').value=today();
 document.getElementById('k-tanggal').value=today();
+// build month dropdowns after data loads
+const _origLoadAll=loadAll;
+loadAll=async function(){
+  await _origLoadAll();
+  buildMonthOptions('trx-bulan');
+  buildMonthOptions('an-bulan');
+};
 </script>
 </body>
 </html>
 `;
 const CORS = {"Access-Control-Allow-Origin":"*","Access-Control-Allow-Methods":"GET, POST, DELETE, OPTIONS","Access-Control-Allow-Headers":"Content-Type, X-PIN"};
-function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{...CORS,"Content-Type":"application/json"}})}
+function json(d,s=200){return new Response(JSON.stringify(d),{status:s,headers:{...CORS,"Content-Type":"application/json"}})}
 function checkPin(r){return r.headers.get("X-PIN")===CORRECT_PIN}
 export default {
   async fetch(request,env){
