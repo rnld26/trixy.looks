@@ -287,7 +287,7 @@ tr:hover td{background:#FFF5FB}
         <div class="form-group"><label>Harga Modal (Rp)</label><input type="number" id="p-modal" placeholder="45000" oninput="hitungHarga()"></div>
         <div class="form-group"><label>Ongkir / Packing (Rp)</label><input type="number" id="p-ongkir" placeholder="3000" oninput="hitungHarga()"></div>
         <div class="form-group"><label>Biaya Lain (Rp)</label><input type="number" id="p-biaya" placeholder="0" oninput="hitungHarga()"></div>
-        <div class="form-group"><label>Admin Shopee Default (%) — acuan saja</label><input type="number" id="p-admin" placeholder="2" step="0.1" value="2" oninput="hitungHarga()"></div>
+        <div class="form-group"><label>Admin Shopee Default (%) — acuan saja</label><input type="number" id="p-admin" placeholder="0" step="0.1" value="0" oninput="hitungHarga()"></div>
         <div class="form-group"><label>Target Margin (Rp)</label><input type="number" id="p-margin" placeholder="20000" oninput="hitungHarga()"></div>
         <div class="form-group"><label>Stok Awal</label><input type="number" id="p-stok" placeholder="50"></div>
         <div class="form-group"><label>Batas Stok Minimum</label><input type="number" id="p-minstok" placeholder="5" value="5"></div>
@@ -600,7 +600,7 @@ function hitungHarga(){
   const modal=parseFloat(document.getElementById('p-modal').value||0);
   const ongkir=parseFloat(document.getElementById('p-ongkir').value||0);
   const biaya=parseFloat(document.getElementById('p-biaya').value||0);
-  const admin=parseFloat(document.getElementById('p-admin').value||2);
+  const admin=parseFloat(document.getElementById('p-admin').value||0);
   const marginRp=parseFloat(document.getElementById('p-margin').value||0);
   if(!modal){document.getElementById('price-result-box').style.display='none';document.getElementById('btn-pakai-disarankan').style.display='none';return}
   const mt=modal+ongkir+biaya,div=1-(admin/100);
@@ -644,10 +644,10 @@ async function tambahProduk(){
   if(!hargaJual||hargaJual<=0){toast('Isi Harga Jual Final!','red');return}
   const ongkir=parseFloat(document.getElementById('p-ongkir').value||0);
   const biaya=parseFloat(document.getElementById('p-biaya').value||0);
-  const admin=parseFloat(document.getElementById('p-admin').value||2);
+  const admin=parseFloat(document.getElementById('p-admin').value||0);
   const marginRp=parseFloat(document.getElementById('p-margin').value||0);
   const stok=parseInt(document.getElementById('p-stok').value||0);
-  const minStok=parseInt(document.getElementById('p-minstok').value||5);
+  const minStok=parseInt(document.getElementById('p-minstok').value||1);
   const modalTotal=modal+ongkir+biaya;
   if(editProdukId){
     const i=produk.findIndex(p=>p.id===editProdukId);
@@ -660,7 +660,7 @@ async function tambahProduk(){
 
 function resetFormProduk(){
   ['p-nama','p-modal','p-ongkir','p-biaya','p-stok','p-hargajual'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('p-admin').value='2';document.getElementById('p-margin').value='';document.getElementById('p-minstok').value='5';
+  document.getElementById('p-admin').value='0';document.getElementById('p-margin').value='';document.getElementById('p-minstok').value='1';
   document.getElementById('price-result-box').style.display='none';
   document.getElementById('btn-pakai-disarankan').style.display='none';
   document.getElementById('manual-preview').textContent='';
