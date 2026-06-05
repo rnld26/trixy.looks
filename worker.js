@@ -1,10 +1,8 @@
 // ============================================================
-//  TRIXY.LOOKS — Cloudflare Worker v6
+//  TRIXY.LOOKS — Cloudflare Worker v6.1
 //  ⚠️  GANTI PIN di baris bawah ini
 // ============================================================
-
 const CORRECT_PIN = "2226";
-
 const HTML = `<!DOCTYPE html>
 <html lang="id">
 <head>
@@ -742,9 +740,10 @@ function renderSellRows(){
         </div>
         <div style="padding:10px 12px;background:#F0FFF4;display:flex;flex-direction:column;gap:5px">
           <label style="font-size:10px;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:.5px">Pendapatan Shopee /pcs (Rp)</label>
-          <input type="text" inputmode="numeric" value="\${pendapatanVal?fmtNum(pendapatanVal):''}" placeholder="cth: 145.000"
+          <input type="text" inputmode="numeric" value="\${pendapatanVal?fmtNum(pendapatanVal):''}" placeholder="cth: 145000"
             class="sell-admin-pendapatan" data-id="\${row.id}"
-            oninput="fmtInputRp(this)" onchange="updateSellRowAdmin('\${row.id}','pendapatan',unFmt(this.value))"
+            oninput="guardNumericInput(this)"
+            onblur="fmtInputRp(this);updateSellRowAdmin('\${row.id}','pendapatan',unFmt(this.value))"
             style="border:2px solid #A7F3D0;background:#F0FFF9;padding:7px 10px;font-size:14px;font-weight:700;font-family:'JetBrains Mono',monospace;border-radius:8px;width:100%">
         </div>
       </div>\`:''}
@@ -900,8 +899,9 @@ function renderEditRows(){
         </div>
         <div style="padding:10px 12px;background:#F0FFF4;display:flex;flex-direction:column;gap:5px">
           <label style="font-size:10px;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:.5px">Pendapatan /pcs (Rp)</label>
-          <input type="number" value="\${row.pendapatanPcs||''}" placeholder="0"
-            oninput="updateEditRowAdmin('\${row.id}','pendapatan',this.value)"
+          <input type="text" inputmode="numeric" value="\${row.pendapatanPcs?fmtNum(row.pendapatanPcs):''}" placeholder="cth: 145000"
+            oninput="guardNumericInput(this)"
+            onblur="fmtInputRp(this);updateEditRowAdmin('\${row.id}','pendapatan',unFmt(this.value))"
             style="border:2px solid #A7F3D0;background:#F0FFF9;padding:7px 10px;font-size:14px;font-weight:700;font-family:'JetBrains Mono',monospace;border-radius:8px;width:100%">
         </div>
       </div>\`:''}
@@ -1116,15 +1116,17 @@ function drawChart(days){
 // ── NUMBER FORMAT HELPERS ────────────────────────
 function fmtNum(n){return Math.round(n||0).toLocaleString('id-ID')}
 function unFmt(s){return parseFloat(String(s||0).replace(/\\./g,'').replace(/,/g,'.'))||0}
+// Format only on blur — never interrupt typing
 function fmtInputRp(el){
-  const pos=el.selectionStart;
+  // strip non-numeric, format with thousand separator
   const raw=el.value.replace(/[^0-9]/g,'');
   if(!raw){el.value='';return}
-  const num=parseInt(raw,10);
-  const formatted=num.toLocaleString('id-ID');
-  el.value=formatted;
-  // restore cursor roughly
-  try{const diff=formatted.length-el.value.length;el.setSelectionRange(pos+diff,pos+diff)}catch(e){}
+  el.value=parseInt(raw,10).toLocaleString('id-ID');
+}
+// Called on keyup/input — only strip non-numeric chars, no reformatting
+function guardNumericInput(el){
+  const raw=el.value.replace(/[^0-9]/g,'');
+  if(el.value!==raw) el.value=raw; // remove any non-digit without reformatting
 }
 
 // ── INIT ──
@@ -1134,57 +1136,22 @@ document.getElementById('k-tanggal').value=today();
 </body>
 </html>
 `;
-
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, X-PIN",
-};
-
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status, headers: { ...CORS, "Content-Type": "application/json" },
-  });
-}
-
-function checkPin(request) {
-  return request.headers.get("X-PIN") === CORRECT_PIN;
-}
-
+const CORS = {"Access-Control-Allow-Origin":"*","Access-Control-Allow-Methods":"GET, POST, DELETE, OPTIONS","Access-Control-Allow-Headers":"Content-Type, X-PIN"};
+function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{...CORS,"Content-Type":"application/json"}})}
+function checkPin(r){return r.headers.get("X-PIN")===CORRECT_PIN}
 export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
-    const path = url.pathname;
-
-    if (request.method === "OPTIONS")
-      return new Response(null, { status: 204, headers: CORS });
-
-    if (path.startsWith("/api/")) {
-      if (!checkPin(request)) return json({ error: "PIN salah" }, 401);
-
-      if (path === "/api/verify-pin" && request.method === "GET")
-        return json({ ok: true });
-
-      const key = path.replace("/api/", "");
-      if (!["produk","jual","pengeluaran"].includes(key))
-        return json({ error: "Not found" }, 404);
-
-      if (request.method === "GET") {
-        const raw = await env.TRIXY_KV.get(key);
-        return json(raw ? JSON.parse(raw) : []);
-      }
-      if (request.method === "POST") {
-        await env.TRIXY_KV.put(key, JSON.stringify(await request.json()));
-        return json({ ok: true });
-      }
-      if (request.method === "DELETE") {
-        await env.TRIXY_KV.put(key, JSON.stringify([]));
-        return json({ ok: true });
-      }
+  async fetch(request,env){
+    const url=new URL(request.url),path=url.pathname;
+    if(request.method==="OPTIONS")return new Response(null,{status:204,headers:CORS});
+    if(path.startsWith("/api/")){
+      if(!checkPin(request))return json({error:"PIN salah"},401);
+      if(path==="/api/verify-pin"&&request.method==="GET")return json({ok:true});
+      const key=path.replace("/api/","");
+      if(!["produk","jual","pengeluaran"].includes(key))return json({error:"Not found"},404);
+      if(request.method==="GET"){const raw=await env.TRIXY_KV.get(key);return json(raw?JSON.parse(raw):[]);}
+      if(request.method==="POST"){await env.TRIXY_KV.put(key,JSON.stringify(await request.json()));return json({ok:true});}
+      if(request.method==="DELETE"){await env.TRIXY_KV.put(key,JSON.stringify([]));return json({ok:true});}
     }
-
-    return new Response(HTML, {
-      headers: { "Content-Type": "text/html; charset=utf-8" },
-    });
-  },
+    return new Response(HTML,{headers:{"Content-Type":"text/html; charset=utf-8"}});
+  }
 };
