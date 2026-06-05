@@ -1,5 +1,5 @@
 // ============================================================
-//  TRIXY.LOOKS — Cloudflare Worker v5
+//  TRIXY.LOOKS — Cloudflare Worker v6
 //  ⚠️  GANTI PIN di baris bawah ini
 // ============================================================
 
@@ -735,18 +735,20 @@ function renderSellRows(){
       <div class="admin-col" style="display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--border)">
         <div style="padding:10px 12px;background:#FFF8F0;border-right:1px solid var(--border);display:flex;flex-direction:column;gap:5px">
           <label style="font-size:10px;font-weight:800;color:var(--orange);text-transform:uppercase;letter-spacing:.5px">Admin Shopee %</label>
-          <input type="number" step="0.1" value="\${row.adminPct||''}" placeholder="cth: 2.5"
-            oninput="updateSellRowAdmin('\${row.id}','pct',this.value)"
+          <input type="text" inputmode="decimal" value="\${row.adminPct||''}" placeholder="cth: 2.5"
+            class="sell-admin-pct" data-id="\${row.id}"
+            onchange="updateSellRowAdmin('\${row.id}','pct',this.value)"
             style="border:2px solid #FFCFA0;background:#FFFAF5;padding:7px 10px;font-size:14px;font-weight:700;font-family:'JetBrains Mono',monospace;border-radius:8px;width:100%">
         </div>
         <div style="padding:10px 12px;background:#F0FFF4;display:flex;flex-direction:column;gap:5px">
           <label style="font-size:10px;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:.5px">Pendapatan Shopee /pcs (Rp)</label>
-          <input type="number" value="\${pendapatanVal}" placeholder="cth: 145625"
-            oninput="updateSellRowAdmin('\${row.id}','pendapatan',this.value)"
+          <input type="text" inputmode="numeric" value="\${pendapatanVal?fmtNum(pendapatanVal):''}" placeholder="cth: 145.000"
+            class="sell-admin-pendapatan" data-id="\${row.id}"
+            oninput="fmtInputRp(this)" onchange="updateSellRowAdmin('\${row.id}','pendapatan',unFmt(this.value))"
             style="border:2px solid #A7F3D0;background:#F0FFF9;padding:7px 10px;font-size:14px;font-weight:700;font-family:'JetBrains Mono',monospace;border-radius:8px;width:100%">
         </div>
       </div>\`:''}
-      <div class="sell-row-footer">
+      <div class="sell-row-footer" data-id="\${row.id}">
         <div><span class="row-subtotal">Subtotal: \${subtotalTxt}</span></div>
         <div style="text-align:right">
           \${payMode!=='cash'?\`<div class="row-admin-info">Admin: \${adminInfoTxt}</div>\`:'<div style="font-size:11px;color:var(--green);font-weight:700">Tidak ada admin</div>'}
@@ -766,32 +768,33 @@ function updateSellRow(id,f,v){
   renderSellRows();
 }
 
-function updateSellRowAdmin(id,type,v){
+function updateSellRowAdmin(id,type,rawVal){
   const r=sellRows.find(x=>x.id===id);if(!r)return;
-  const val=parseFloat(v)||0;
+  const val=parseFloat(String(rawVal).replace(/[^0-9.]/g,''))||0;
   if(type==='pct'){
-    r.adminPct=val;
-    r.pendapatanPcs=0; // clear pendapatan jika isi %
-  } else {
-    r.pendapatanPcs=val;
-    r.adminPct=0; // clear % jika isi pendapatan
-    // update % field di UI
+    r.adminPct=val;r.pendapatanPcs=0;
+    const sib=document.querySelector('.sell-admin-pendapatan[data-id="'+id+'"]');
+    if(sib){sib.value='';}
+  }else{
+    r.pendapatanPcs=val;r.adminPct=0;
     const p=produk.find(x=>x.id===r.produkId);
-    if(p&&val>0){
-      const ratio=getSplitRatio();
-      const shopeeAmt=payMode==='split'?p.hargaJual*ratio:p.hargaJual;
-      if(shopeeAmt>0) r.adminPct=parseFloat(((shopeeAmt-val)/shopeeAmt*100).toFixed(4));
-    }
+    if(p&&val>0){const ratio=getSplitRatio();const sa=payMode==='split'?p.hargaJual*ratio:p.hargaJual;if(sa>0)r.adminPct=parseFloat(((sa-val)/sa*100).toFixed(4));}
+    const sib=document.querySelector('.sell-admin-pct[data-id="'+id+'"]');
+    if(sib)sib.value=r.adminPct>0?r.adminPct.toFixed(2):'';
   }
-  // Update both inputs visually without full re-render
-  const rows=document.querySelectorAll('.sell-row');
-  const idx=sellRows.findIndex(x=>x.id===id);
-  if(idx>=0&&rows[idx]){
-    const inputs=rows[idx].querySelectorAll('input[type=number]');
-    // inputs[1]=qty, inputs[2]=admin%, inputs[3]=pendapatan (after select)
-    // Just re-render for accuracy
+  // update footer only — no full re-render so focus stays
+  const ratio=getSplitRatio();
+  const p=produk.find(x=>x.id===r.produkId);
+  const res=p?calcItemResult(p.hargaJual,p.modalTotal,r.qty,r.adminPct,r.pendapatanPcs,payMode,ratio):null;
+  const foot=document.querySelector('.sell-row-footer[data-id="'+id+'"]');
+  if(foot&&p){
+    const adminTxt=res&&res.adminRp>0?res.adminPctActual.toFixed(2)+'% = '+rp(res.adminRp):(payMode==='cash'?'Tidak ada admin':'—');
+    foot.innerHTML='<div><span class="row-subtotal">Subtotal: '+rp(p.hargaJual*r.qty)+'</span></div>'
+      +'<div style="text-align:right">'
+      +(payMode!=='cash'?'<div class="row-admin-info">Admin: '+adminTxt+'</div>':'<div style="font-size:11px;color:var(--green);font-weight:700">Tidak ada admin</div>')
+      +'<div class="row-laba">Laba: '+(res?rp(res.laba):'—')+'</div></div>';
   }
-  renderSellRows();
+  updateTotalJual();
 }
 
 function updateTotalJual(){
@@ -1110,6 +1113,20 @@ function drawChart(days){
     ctx.fillStyle='#9B7BB8';ctx.font='bold 9px Nunito';ctx.textAlign='center';ctx.fillText(d.lbl,cx,H-6);
   });
 }
+// ── NUMBER FORMAT HELPERS ────────────────────────
+function fmtNum(n){return Math.round(n||0).toLocaleString('id-ID')}
+function unFmt(s){return parseFloat(String(s||0).replace(/\\./g,'').replace(/,/g,'.'))||0}
+function fmtInputRp(el){
+  const pos=el.selectionStart;
+  const raw=el.value.replace(/[^0-9]/g,'');
+  if(!raw){el.value='';return}
+  const num=parseInt(raw,10);
+  const formatted=num.toLocaleString('id-ID');
+  el.value=formatted;
+  // restore cursor roughly
+  try{const diff=formatted.length-el.value.length;el.setSelectionRange(pos+diff,pos+diff)}catch(e){}
+}
+
 // ── INIT ──
 document.getElementById('j-tanggal').value=today();
 document.getElementById('k-tanggal').value=today();
