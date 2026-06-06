@@ -1,4 +1,4 @@
-// TRIXY.LOOKS — Cloudflare Worker v8
+// TRIXY.LOOKS — Cloudflare Worker v9
 const CORRECT_PIN = "2226";
 const HTML = `<!DOCTYPE html>
 <html lang="id">
@@ -276,7 +276,15 @@ tr:hover td{background:#FFF5FB}
     <div class="card">
       <div class="card-title">📦 Tambah / Edit Produk</div>
       <div class="form-grid">
-        <div class="form-group full"><label>Nama Produk</label><input type="text" id="p-nama" placeholder="Contoh: Dress Floral Pink S"></div>
+        <div class="form-group full">
+          <label>Nama Produk</label>
+          <input type="text" id="p-nama" placeholder="Contoh: Dress Floral Pink S" oninput="cekNamaDuplikat()">
+          <div id="duplikat-warning" style="display:none;background:linear-gradient(135deg,#FFF9C4,#FFF0E0);border:2px solid var(--orange);border-radius:var(--radius-sm);padding:12px 14px;margin-top:6px">
+            <div style="font-size:13px;font-weight:800;color:var(--orange);margin-bottom:8px" id="duplikat-txt">⚠️ Produk sudah ada</div>
+            <div style="font-size:12px;color:var(--text);font-weight:600;margin-bottom:10px">Untuk menambah stok, gunakan tombol di bawah. Tombol Simpan Produk dinonaktifkan selama nama sama.</div>
+            <button class="btn btn-warn btn-sm" type="button" onclick="bukaTambahStokDariWarning()">📦 Tambah Stok ke Produk Ini</button>
+          </div>
+        </div>
         <div class="form-group"><label>Harga Modal (Rp)</label><input type="number" id="p-modal" placeholder="45000" oninput="hitungHarga()"></div>
         <div class="form-group"><label>Ongkir / Packing (Rp)</label><input type="number" id="p-ongkir" placeholder="3000" oninput="hitungHarga()"></div>
         <div class="form-group"><label>Biaya Lain (Rp)</label><input type="number" id="p-biaya" placeholder="0" oninput="hitungHarga()"></div>
@@ -303,7 +311,7 @@ tr:hover td{background:#FFF5FB}
       <div class="mt16 flex-end">
         <button class="btn btn-ghost" onclick="resetFormProduk()">Reset</button>
         <button class="btn btn-ghost btn-sm" onclick="pakaiDisarankan()" id="btn-pakai-disarankan" style="display:none">Pakai Harga Disarankan</button>
-        <button class="btn btn-primary" onclick="tambahProduk()">✨ Simpan Produk</button>
+        <button class="btn btn-primary" id="btn-simpan-produk" onclick="tambahProduk()">✨ Simpan Produk</button>
       </div>
     </div>
     <div class="card">
@@ -479,6 +487,30 @@ tr:hover td{background:#FFF5FB}
     <div class="card"><div class="card-title">💸 Pengeluaran per Kategori</div><div id="kel-cat-breakdown"><div class="empty"><div class="icon">💸</div><p>Belum ada data</p></div></div></div>
   </div>
 </div>
+<!-- MODAL TAMBAH STOK -->
+<div class="modal-overlay" id="stok-modal" style="display:none">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-title">📦 Tambah Stok</div>
+    <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:16px">
+      <div style="font-size:12px;color:var(--muted);font-weight:700;margin-bottom:2px">Produk</div>
+      <div style="font-size:15px;font-weight:900;color:var(--purple)" id="stok-modal-nama">—</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">Stok saat ini: <b id="stok-modal-current" style="color:var(--text)">0</b> pcs</div>
+    </div>
+    <div class="form-group">
+      <label>Tambah Stok (pcs)</label>
+      <input type="number" id="stok-modal-qty" placeholder="Contoh: 20" min="1"
+        style="font-size:20px;font-weight:900;font-family:'JetBrains Mono',monospace;color:var(--green);border-color:var(--green)">
+    </div>
+    <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:10px 14px;margin-top:10px;font-size:12px;color:var(--muted);font-weight:700" id="stok-modal-preview">
+      Stok setelah ditambah: —
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="closeStokModal()">Batal</button>
+      <button class="btn btn-success" onclick="simpanTambahStok()">💾 Simpan Stok</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -639,12 +671,16 @@ async function tambahProduk(){
 }
 function resetFormProduk(){
   ['p-nama','p-modal','p-ongkir','p-biaya','p-stok','p-hargajual','p-margin'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('p-admin').value='0'; // default 0
+  document.getElementById('p-admin').value='0';
   document.getElementById('p-minstok').value='5';
   document.getElementById('price-result-box').style.display='none';
   document.getElementById('hj-manual-box').style.display='none';
   document.getElementById('btn-pakai-disarankan').style.display='none';
   document.getElementById('manual-preview').textContent='';
+  document.getElementById('duplikat-warning').style.display='none';
+  const btnSimpan=document.getElementById('btn-simpan-produk');
+  btnSimpan.disabled=false;btnSimpan.style.opacity='1';btnSimpan.title='';
+  duplikatProdukId=null;
   editProdukId=null;cachedHargaDisarankan=0;
 }
 function editProduk(id){
@@ -689,7 +725,11 @@ function renderProduk(){
       <td class="mono" style="color:var(--green)">\${rp(p.marginRp||0)}</td>
       <td class="mono fw9" style="color:var(--purple)">\${rp(p.hargaJual)}</td>
       <td>\${stokBadge}</td>
-      <td style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editProduk('\${p.id}')">✏️</button><button class="btn btn-danger" onclick="hapusProduk('\${p.id}')">🗑</button></td>
+      <td style="display:flex;gap:4px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="editProduk('\${p.id}')">✏️</button>
+        <button class="btn btn-sm" style="background:linear-gradient(135deg,var(--teal),var(--green));color:#fff" onclick="bukaTambahStok('\${p.id}')">📦+</button>
+        <button class="btn btn-danger" onclick="hapusProduk('\${p.id}')">🗑</button>
+      </td>
     </tr>\`;
   }).join('');
   renderPagination('produk-pagination',produkPage,pages,p=>{produkPage=p;renderProduk()});
@@ -1156,6 +1196,84 @@ function guardNumericInput(el){
   if(el.value!==raw) el.value=raw; // remove any non-digit without reformatting
 }
 
+// ── DUPLIKAT PRODUK ─────────────────────────────
+let duplikatProdukId = null;
+
+function normNama(s){ return s.trim().toLowerCase().replace(/\\s+/g,' '); }
+
+function cekNamaDuplikat(){
+  const nama = document.getElementById('p-nama').value;
+  const norm = normNama(nama);
+  const warn = document.getElementById('duplikat-warning');
+  const btnSimpan = document.getElementById('btn-simpan-produk');
+  if(!norm){ warn.style.display='none'; btnSimpan.disabled=false; btnSimpan.style.opacity='1'; duplikatProdukId=null; return; }
+  // find existing product with same name (excluding current edit)
+  const found = produk.find(p => normNama(p.nama)===norm && p.id!==editProdukId);
+  if(found){
+    duplikatProdukId = found.id;
+    document.getElementById('duplikat-txt').textContent = '⚠️ "'+found.nama+'" sudah ada — stok saat ini: '+found.stok+' pcs';
+    warn.style.display = 'block';
+    btnSimpan.disabled = true;
+    btnSimpan.style.opacity = '0.4';
+    btnSimpan.title = 'Nama sudah ada — gunakan Tambah Stok';
+  } else {
+    duplikatProdukId = null;
+    warn.style.display = 'none';
+    btnSimpan.disabled = false;
+    btnSimpan.style.opacity = '1';
+    btnSimpan.title = '';
+  }
+}
+
+function bukaTambahStokDariWarning(){
+  if(duplikatProdukId) bukaTambahStok(duplikatProdukId);
+}
+
+// ── TAMBAH STOK MODAL ────────────────────────────
+let stokModalProdukId = null;
+
+function bukaTambahStok(id){
+  const p = produk.find(x=>x.id===id); if(!p) return;
+  stokModalProdukId = id;
+  document.getElementById('stok-modal-nama').textContent = p.nama;
+  document.getElementById('stok-modal-current').textContent = p.stok;
+  document.getElementById('stok-modal-qty').value = '';
+  document.getElementById('stok-modal-preview').textContent = 'Stok setelah ditambah: —';
+  document.getElementById('stok-modal').style.display = 'flex';
+  setTimeout(()=>document.getElementById('stok-modal-qty').focus(),100);
+  // listen for preview update
+  document.getElementById('stok-modal-qty').oninput = function(){
+    const add = parseInt(this.value)||0;
+    const p2 = produk.find(x=>x.id===stokModalProdukId);
+    if(p2&&add>0) document.getElementById('stok-modal-preview').textContent = 'Stok setelah ditambah: '+(p2.stok+add)+' pcs';
+    else document.getElementById('stok-modal-preview').textContent = 'Stok setelah ditambah: —';
+  };
+}
+
+function closeStokModal(){
+  document.getElementById('stok-modal').style.display = 'none';
+  stokModalProdukId = null;
+}
+
+async function simpanTambahStok(){
+  const add = parseInt(document.getElementById('stok-modal-qty').value)||0;
+  if(add<=0){ toast('Isi jumlah stok yang ditambah!','red'); return; }
+  const p = produk.find(x=>x.id===stokModalProdukId); if(!p) return;
+  p.stok += add;
+  closeStokModal();
+  // also close warning if open from form
+  document.getElementById('duplikat-warning').style.display = 'none';
+  const btnSimpan = document.getElementById('btn-simpan-produk');
+  btnSimpan.disabled = false; btnSimpan.style.opacity = '1';
+  duplikatProdukId = null;
+  // clear nama field if it was triggering the warning
+  const namaField = document.getElementById('p-nama');
+  if(normNama(namaField.value)===normNama(p.nama)) resetFormProduk();
+  renderProduk();
+  await saveData('produk');
+  toast('Stok '+p.nama+' bertambah '+add+' → total '+p.stok+' pcs 📦','green');
+}
+
 // ── MONTH FILTER HELPERS ─────────────────────────
 function buildMonthOptions(selId){
   const sel=document.getElementById(selId);if(!sel)return;
@@ -1217,22 +1335,20 @@ loadAll=async function(){
 </body>
 </html>
 `;
-const CORS = {"Access-Control-Allow-Origin":"*","Access-Control-Allow-Methods":"GET, POST, DELETE, OPTIONS","Access-Control-Allow-Headers":"Content-Type, X-PIN"};
+const CORS={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Methods":"GET, POST, DELETE, OPTIONS","Access-Control-Allow-Headers":"Content-Type, X-PIN"};
 function json(d,s=200){return new Response(JSON.stringify(d),{status:s,headers:{...CORS,"Content-Type":"application/json"}})}
 function checkPin(r){return r.headers.get("X-PIN")===CORRECT_PIN}
-export default {
-  async fetch(request,env){
-    const url=new URL(request.url),path=url.pathname;
-    if(request.method==="OPTIONS")return new Response(null,{status:204,headers:CORS});
-    if(path.startsWith("/api/")){
-      if(!checkPin(request))return json({error:"PIN salah"},401);
-      if(path==="/api/verify-pin"&&request.method==="GET")return json({ok:true});
-      const key=path.replace("/api/","");
-      if(!["produk","jual","pengeluaran"].includes(key))return json({error:"Not found"},404);
-      if(request.method==="GET"){const raw=await env.TRIXY_KV.get(key);return json(raw?JSON.parse(raw):[]);}
-      if(request.method==="POST"){await env.TRIXY_KV.put(key,JSON.stringify(await request.json()));return json({ok:true});}
-      if(request.method==="DELETE"){await env.TRIXY_KV.put(key,JSON.stringify([]));return json({ok:true});}
-    }
-    return new Response(HTML,{headers:{"Content-Type":"text/html; charset=utf-8"}});
+export default{async fetch(request,env){
+  const url=new URL(request.url),path=url.pathname;
+  if(request.method==="OPTIONS")return new Response(null,{status:204,headers:CORS});
+  if(path.startsWith("/api/")){
+    if(!checkPin(request))return json({error:"PIN salah"},401);
+    if(path==="/api/verify-pin"&&request.method==="GET")return json({ok:true});
+    const key=path.replace("/api/","");
+    if(!["produk","jual","pengeluaran"].includes(key))return json({error:"Not found"},404);
+    if(request.method==="GET"){const raw=await env.TRIXY_KV.get(key);return json(raw?JSON.parse(raw):[]);}
+    if(request.method==="POST"){await env.TRIXY_KV.put(key,JSON.stringify(await request.json()));return json({ok:true});}
+    if(request.method==="DELETE"){await env.TRIXY_KV.put(key,JSON.stringify([]));return json({ok:true});}
   }
-};
+  return new Response(HTML,{headers:{"Content-Type":"text/html; charset=utf-8"}});
+}};
