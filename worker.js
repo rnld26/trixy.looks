@@ -1,4 +1,4 @@
-// TRIXY.LOOKS — Cloudflare Worker v7
+// TRIXY.LOOKS — Cloudflare Worker v8
 const CORRECT_PIN = "2226";
 const HTML = `<!DOCTYPE html>
 <html lang="id">
@@ -45,7 +45,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 .header-sync{width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;transition:all .2s;flex-shrink:0}
 .header-sync:hover{background:rgba(255,255,255,.35)}
 .header-sync.spinning{animation:spin .8s linear infinite}
-.stok-alert{background:linear-gradient(135deg,#FFF0E0,#FFF9C4);border:2px solid var(--orange);border-radius:var(--radius);padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:10px;cursor:pointer}
+
 .tabs{display:flex;gap:4px;padding:10px 16px;background:var(--surface);border-bottom:2px solid var(--border);overflow-x:auto;position:sticky;top:56px;z-index:99;box-shadow:0 2px 12px rgba(168,85,247,.08)}
 .tab{padding:8px 16px;cursor:pointer;font-weight:800;font-size:12px;border-radius:30px;white-space:nowrap;transition:all .2s;color:var(--muted);border:2px solid transparent;display:flex;align-items:center;gap:5px}
 .tab:hover{background:var(--surface2);color:var(--purple)}
@@ -272,10 +272,7 @@ tr:hover td{background:#FFF5FB}
 
   <!-- PRODUK -->
   <div class="page active" id="page-produk">
-    <div id="stok-alert-box" style="display:none" class="stok-alert">
-      <span style="font-size:20px">⚠️</span>
-      <div><div style="font-size:13px;font-weight:800;color:var(--orange)" id="stok-alert-txt"></div><div style="font-size:12px;color:var(--text);font-weight:600;margin-top:4px" id="stok-alert-list"></div></div>
-    </div>
+
     <div class="card">
       <div class="card-title">📦 Tambah / Edit Produk</div>
       <div class="form-grid">
@@ -517,7 +514,7 @@ async function apiSet(k,d){const r=await fetch(BASE_URL+'/api/'+k,{method:'POST'
 async function loadAll(){
   showLoad('Memuat data...');
   try{[produk,transaksiJual,transaksiKel]=await Promise.all([apiGet('produk'),apiGet('jual'),apiGet('pengeluaran')]);
-  renderProduk();renderPengeluaran();renderTransaksi();updHeaderStats();checkStokAlert();setSyncSt('✅ Data dimuat')}
+  renderProduk();renderPengeluaran();renderTransaksi();updHeaderStats();setSyncSt('✅ Data dimuat')}
   catch(e){setSyncSt('⚠️ Gagal memuat')}hideLoad();
 }
 async function saveData(k){setSyncBar(true);try{await apiSet(k,k==='produk'?produk:k==='jual'?transaksiJual:transaksiKel);setSyncSt('☁️ Tersimpan')}catch(e){setSyncSt('⚠️ Gagal simpan');toast('Gagal simpan!','red')}setSyncBar(false)}
@@ -574,15 +571,7 @@ function updHeaderStats(){
   document.getElementById('hs-laba').textContent=rpS(lB);
 }
 
-// ── STOK ALERT ───────────────────────────────────
-function checkStokAlert(){
-  const low=produk.filter(p=>p.stok<=(p.minStok||5));
-  const box=document.getElementById('stok-alert-box');
-  if(!low.length){box.style.display='none';return}
-  box.style.display='flex';
-  document.getElementById('stok-alert-txt').textContent='⚠️ '+low.length+' produk stok hampir habis!';
-  document.getElementById('stok-alert-list').textContent=low.map(p=>p.nama+' ('+p.stok+' sisa)').join(' · ');
-}
+// stok alert removed — badge shown inline in product table
 
 // ── TABS ─────────────────────────────────────────
 function switchTab(t,el){
@@ -646,7 +635,7 @@ async function tambahProduk(){
     if(i>-1)produk[i]={...produk[i],nama,modal,ongkir,biaya,admin,marginRp,hargaJual,modalTotal,stok,minStok};
     editProdukId=null;
   }else produk.push({id:genId(),nama,modal,ongkir,biaya,admin,marginRp,hargaJual,modalTotal,stok,minStok});
-  renderProduk();resetFormProduk();checkStokAlert();await saveData('produk');toast('Produk disimpan! 📦','pink');
+  renderProduk();resetFormProduk();await saveData('produk');toast('Produk disimpan! 📦','pink');
 }
 function resetFormProduk(){
   ['p-nama','p-modal','p-ongkir','p-biaya','p-stok','p-hargajual','p-margin'].forEach(id=>document.getElementById(id).value='');
@@ -669,7 +658,7 @@ function editProduk(id){
   document.getElementById('p-hargajual').value=p.hargaJual;
   hitungHarga();window.scrollTo({top:0,behavior:'smooth'});toast('Mode edit aktif ✏️','purple');
 }
-async function hapusProduk(id){if(!confirm('Hapus produk ini?'))return;produk=produk.filter(p=>p.id!==id);renderProduk();checkStokAlert();await saveData('produk');toast('Dihapus','red')}
+async function hapusProduk(id){if(!confirm('Hapus produk ini?'))return;produk=produk.filter(p=>p.id!==id);renderProduk();await saveData('produk');toast('Dihapus','red')}
 function renderProduk(){
   const q=(document.getElementById('produk-search')?.value||'').toLowerCase();
   let data=produk.filter(p=>p.nama.toLowerCase().includes(q));
@@ -679,14 +668,30 @@ function renderProduk(){
   const slice=data.slice((produkPage-1)*PRODUK_PER_PAGE,produkPage*PRODUK_PER_PAGE);
   const tbody=document.getElementById('tbody-produk');
   if(!slice.length){tbody.innerHTML=\`<tr><td colspan="6"><div class="empty"><div class="icon">📦</div><p>\${q?'Tidak ditemukan':'Belum ada produk'}</p></div></td></tr>\`;document.getElementById('produk-pagination').innerHTML='';return}
-  tbody.innerHTML=slice.map(p=>\`<tr>
-    <td><b>\${p.nama}</b><br><span style="font-size:11px;color:var(--muted)">Admin default: \${p.admin||0}%</span></td>
-    <td class="mono">\${rp(p.modalTotal||p.modal)}</td>
-    <td class="mono" style="color:var(--green)">\${rp(p.marginRp||0)}</td>
-    <td class="mono fw9" style="color:var(--purple)">\${rp(p.hargaJual)}</td>
-    <td><span class="badge \${p.stok<=(p.minStok||5)?'badge-red':p.stok<=10?'badge-yellow':'badge-teal'}">\${p.stok}</span></td>
-    <td style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editProduk('\${p.id}')">✏️</button><button class="btn btn-danger" onclick="hapusProduk('\${p.id}')">🗑</button></td>
-  </tr>\`).join('');
+  tbody.innerHTML=slice.map(p=>{
+    const isHabis=p.stok===0;
+    const isHampir=!isHabis&&p.stok<=(p.minStok||5);
+    const stokBadge=isHabis
+      ?'<span class="badge badge-red" style="font-size:10px">● HABIS</span>'
+      :isHampir
+        ?'<span class="badge badge-yellow" style="font-size:10px">⚠ '+p.stok+' sisa</span>'
+        :'<span class="badge badge-teal">'+p.stok+'</span>';
+    return\`<tr>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <b>\${p.nama}</b>
+          \${isHabis?'<span class="badge badge-red" style="font-size:10px;padding:2px 7px">HABIS</span>':''}
+          \${isHampir?'<span class="badge badge-yellow" style="font-size:10px;padding:2px 7px">HAMPIR HABIS</span>':''}
+        </div>
+        <span style="font-size:11px;color:var(--muted)">Admin default: \${p.admin||0}%</span>
+      </td>
+      <td class="mono">\${rp(p.modalTotal||p.modal)}</td>
+      <td class="mono" style="color:var(--green)">\${rp(p.marginRp||0)}</td>
+      <td class="mono fw9" style="color:var(--purple)">\${rp(p.hargaJual)}</td>
+      <td>\${stokBadge}</td>
+      <td style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="editProduk('\${p.id}')">✏️</button><button class="btn btn-danger" onclick="hapusProduk('\${p.id}')">🗑</button></td>
+    </tr>\`;
+  }).join('');
   renderPagination('produk-pagination',produkPage,pages,p=>{produkPage=p;renderProduk()});
 }
 
@@ -860,7 +865,7 @@ async function simpanTransaksi(){
   const order=document.getElementById('j-order').value.trim();
   transaksiJual.unshift({id:genId(),tanggal,order:order||'-',items,total,laba,adminTotal,pay});
   sellRows=[];initJual();await Promise.all([saveData('jual'),saveData('produk')]);
-  renderProduk();checkStokAlert();updHeaderStats();toast('Transaksi tersimpan! 🎉','green');
+  renderProduk();updHeaderStats();toast('Transaksi tersimpan! 🎉','green');
 }
 
 // ── EDIT TRANSAKSI ───────────────────────────────
