@@ -1,5 +1,5 @@
 // TRIXY.LOOKS — Cloudflare Worker v10
-const CORRECT_PIN = "222615";
+const CORRECT_PIN = "2226";
 const HTML = `<!DOCTYPE html>
 <html lang="id">
 <head>
