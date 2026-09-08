@@ -1,5 +1,5 @@
-// TRIXY.LOOKS — Cloudflare Worker v9
-const CORRECT_PIN = "2226";
+// TRIXY.LOOKS — Cloudflare Worker v10
+const CORRECT_PIN = "222615";
 const HTML = `<!DOCTYPE html>
 <html lang="id">
 <head>
@@ -335,14 +335,36 @@ tr:hover td{background:#FFF5FB}
         <div class="form-group"><label>No. Order (opsional)</label><input type="text" id="j-order" placeholder="SHP-2026-XXXXX"></div>
       </div>
       <div class="divider"></div>
-      <div style="margin-bottom:10px">
-        <div class="card-title" style="margin-bottom:4px;font-size:13px">🛍️ Produk</div>
-        <div style="font-size:12px;color:var(--muted);font-weight:700;background:rgba(168,85,247,.06);border-radius:8px;padding:8px 12px">
-          💡 Isi <b style="color:var(--orange)">Admin %</b> jika tahu persentase, <b>ATAU</b> isi <b style="color:var(--green)">Pendapatan Shopee (Rp)</b> jika tahu nominal dari app Shopee — sistem hitung otomatis yang satunya.
-        </div>
+
+      <!-- MODE TOGGLE -->
+      <div style="display:flex;gap:8px;margin-bottom:14px">
+        <button class="btn" id="mode-btn-produk" onclick="setJualMode('produk')"
+          style="flex:1;justify-content:center;background:var(--grad);color:#fff;box-shadow:0 4px 14px rgba(168,85,247,.3)">
+          📦 Dari Produk
+        </button>
+        <button class="btn" id="mode-btn-cepat" onclick="setJualMode('cepat')"
+          style="flex:1;justify-content:center;background:var(--surface2);color:var(--muted);border:2px solid var(--border)">
+          ⚡ Input Cepat
+        </button>
       </div>
-      <div id="sell-items-container"></div>
-      <button class="btn btn-ghost btn-sm mt8" onclick="tambahBarisProduk()">+ Tambah Produk</button>
+
+      <!-- MODE: DARI PRODUK -->
+      <div id="mode-produk-area">
+        <div style="font-size:12px;color:var(--muted);font-weight:700;background:rgba(168,85,247,.06);border-radius:8px;padding:8px 12px;margin-bottom:10px">
+          💡 Isi <b style="color:var(--orange)">Admin %</b> jika tahu persentase, <b>ATAU</b> isi <b style="color:var(--green)">Pendapatan Shopee (Rp)</b> jika tahu nominal dari app Shopee.
+        </div>
+        <div id="sell-items-container"></div>
+        <button class="btn btn-ghost btn-sm mt8" onclick="tambahBarisProduk()">+ Tambah Produk</button>
+      </div>
+
+      <!-- MODE: INPUT CEPAT -->
+      <div id="mode-cepat-area" style="display:none">
+        <div style="font-size:12px;color:var(--muted);font-weight:700;background:rgba(251,146,60,.08);border-radius:8px;padding:8px 12px;margin-bottom:10px">
+          ⚡ <b>Input Cepat</b> — langsung isi nama + modal + harga jual. Tidak perlu produk terdaftar. Stok tidak ditracking.
+        </div>
+        <div id="quick-items-container"></div>
+        <button class="btn btn-ghost btn-sm mt8" onclick="tambahBarisQuick()">+ Tambah Item</button>
+      </div>
       <div class="divider"></div>
       <div class="card-title" style="margin-bottom:10px;font-size:13px">💳 Metode Pembayaran</div>
       <div class="pay-btns">
@@ -369,7 +391,7 @@ tr:hover td{background:#FFF5FB}
         </div>
         <div style="text-align:right"><div style="font-size:11px;color:var(--muted);font-weight:700">Total Dibayar</div><div class="t-amount" id="j-total">Rp 0</div></div>
       </div>
-      <button class="btn btn-success mt12" style="width:100%;justify-content:center;padding:14px;font-size:15px" onclick="simpanTransaksi()">✅ Simpan Transaksi</button>
+      <button class="btn btn-success mt12" style="width:100%;justify-content:center;padding:14px;font-size:15px" onclick="simpanTransaksiAuto()">✅ Simpan Transaksi</button>
     </div>
   </div>
 
@@ -747,13 +769,22 @@ function renderPagination(elId,cur,total,cb){
 
 // ── PENJUALAN ────────────────────────────────────
 let sellRows=[];
-function initJual(){document.getElementById('j-tanggal').value=today();if(!sellRows.length)tambahBarisProduk();else renderSellRows();setPayMode('shopee')}
+function initJual(){
+  document.getElementById('j-tanggal').value=today();
+  document.getElementById('j-order').value='';
+  if(!sellRows.length)tambahBarisProduk();else renderSellRows();
+  setPayMode('shopee');
+  // keep mode but reset rows
+  if(jualMode==='cepat'&&!quickRows.length) tambahBarisQuick();
+}
 function tambahBarisProduk(){sellRows.push({id:genId(),produkId:'',qty:1,adminPct:0,pendapatanPcs:0});renderSellRows()}
 function hapusSellRow(id){sellRows=sellRows.filter(r=>r.id!==id);renderSellRows()}
 
 function getSplitRatio(){
   if(payMode!=='split')return 1;
-  let t=0;sellRows.forEach(r=>{const p=produk.find(x=>x.id===r.produkId);if(p)t+=p.hargaJual*r.qty});
+  let t=0;
+  if(jualMode==='cepat') quickRows.forEach(r=>{if(r.hargaJual)t+=r.hargaJual*r.qty});
+  else sellRows.forEach(r=>{const p=produk.find(x=>x.id===r.produkId);if(p)t+=p.hargaJual*r.qty});
   if(!t)return 0;
   return Math.min(1,(parseFloat(document.getElementById('split-shopee')?.value)||0)/t);
 }
@@ -855,11 +886,20 @@ function updateSellRowAdmin(id,type,rawVal){
 function updateTotalJual(){
   const ratio=getSplitRatio();
   let total=0,laba=0,adminTotal=0,items=0;
-  sellRows.forEach(r=>{
-    const p=produk.find(x=>x.id===r.produkId);if(!p)return;
-    const res=calcItemResult(p.hargaJual,p.modalTotal,r.qty,r.adminPct,r.pendapatanPcs,payMode,ratio);
-    total+=p.hargaJual*r.qty;laba+=res.laba;adminTotal+=res.adminRp;items+=r.qty;
-  });
+  if(jualMode==='cepat'){
+    const r=getQuickTotal(); total=r.total; laba=r.laba; items=r.items;
+    quickRows.forEach(r=>{
+      if(!r.hargaJual||!r.modal)return;
+      const res=calcItemResult(r.hargaJual,r.modal,r.qty,r.adminPct,r.pendapatanPcs,payMode,ratio);
+      adminTotal+=res.adminRp;
+    });
+  } else {
+    sellRows.forEach(r=>{
+      const p=produk.find(x=>x.id===r.produkId);if(!p)return;
+      const res=calcItemResult(p.hargaJual,p.modalTotal,r.qty,r.adminPct,r.pendapatanPcs,payMode,ratio);
+      total+=p.hargaJual*r.qty;laba+=res.laba;adminTotal+=res.adminRp;items+=r.qty;
+    });
+  }
   document.getElementById('j-total').textContent=rp(total);
   document.getElementById('j-items-summary').textContent=items+' item';
   document.getElementById('j-admin-preview').textContent=adminTotal>0?'Admin Shopee: '+rp(adminTotal):(payMode==='cash'?'Tidak ada admin Shopee':'');
@@ -1100,6 +1140,7 @@ function renderTransaksi(){
   if(!slice.length){tbody.innerHTML=\`<tr><td colspan="8"><div class="empty"><div class="icon">📋</div><p>Tidak ada transaksi</p></div></td></tr>\`;document.getElementById('trx-pagination').innerHTML='';return}
   tbody.innerHTML=slice.map(x=>{
     if(x.type==='jual'){
+      const isQ=x.isQuick;
       const il=x.items.map(i=>i.nama+' x'+i.qty).join(', ');
       const adminTotalRp=x.adminTotal||x.items.reduce((s,i)=>s+(i.adminRp||0),0);
       // Show per-item admin detail: "2.5% = Rp 4.500"
@@ -1194,6 +1235,178 @@ function fmtInputRp(el){
 function guardNumericInput(el){
   const raw=el.value.replace(/[^0-9]/g,'');
   if(el.value!==raw) el.value=raw; // remove any non-digit without reformatting
+}
+
+// ── JUAL MODE ────────────────────────────────────
+let jualMode = 'produk'; // 'produk' | 'cepat'
+
+function setJualMode(mode){
+  jualMode = mode;
+  const isProduk = mode === 'produk';
+  document.getElementById('mode-produk-area').style.display = isProduk ? 'block' : 'none';
+  document.getElementById('mode-cepat-area').style.display = isProduk ? 'none' : 'block';
+  const btnP = document.getElementById('mode-btn-produk');
+  const btnC = document.getElementById('mode-btn-cepat');
+  if(isProduk){
+    btnP.style.cssText='flex:1;justify-content:center;background:var(--grad);color:#fff;box-shadow:0 4px 14px rgba(168,85,247,.3)';
+    btnC.style.cssText='flex:1;justify-content:center;background:var(--surface2);color:var(--muted);border:2px solid var(--border)';
+  } else {
+    btnC.style.cssText='flex:1;justify-content:center;background:linear-gradient(135deg,var(--orange),var(--yellow));color:#fff;box-shadow:0 4px 14px rgba(251,146,60,.3)';
+    btnP.style.cssText='flex:1;justify-content:center;background:var(--surface2);color:var(--muted);border:2px solid var(--border)';
+    if(!quickRows.length) tambahBarisQuick();
+    renderQuickRows();
+  }
+  updateTotalJual();
+}
+
+// ── QUICK ENTRY ───────────────────────────────────
+let quickRows = [];
+
+function tambahBarisQuick(){
+  quickRows.push({id:genId(),nama:'',hargaJual:0,modal:0,qty:1,adminPct:0,pendapatanPcs:0});
+  renderQuickRows();
+}
+
+function hapusQuickRow(id){ quickRows=quickRows.filter(r=>r.id!==id); renderQuickRows(); }
+
+function updateQuickRow(id,field,val){
+  const r=quickRows.find(x=>x.id===id); if(!r) return;
+  if(field==='qty') r.qty=Math.max(1,parseInt(val)||1);
+  else if(field==='hargaJual'||field==='modal') r[field]=parseFloat(val)||0;
+  else if(field==='adminPct') r.adminPct=parseFloat(val)||0;
+  else if(field==='pendapatanPcs') r.pendapatanPcs=parseFloat(String(val).replace(/[^0-9.]/g,''))||0;
+  else r[field]=val;
+  updateQuickRowFooter(id);
+  updateTotalJual();
+}
+
+function updateQuickRowFooter(id){
+  const r=quickRows.find(x=>x.id===id); if(!r) return;
+  const foot=document.querySelector('.quick-row-footer[data-id="'+id+'"]'); if(!foot) return;
+  const ratio=getSplitRatio();
+  const res=calcItemResult(r.hargaJual,r.modal,r.qty,r.adminPct,r.pendapatanPcs,payMode,ratio);
+  const adminTxt=res.adminRp>0?res.adminPctActual.toFixed(2)+'% = '+rp(res.adminRp):(payMode==='cash'?'Tidak ada admin':'—');
+  foot.innerHTML='<div><span class="row-subtotal">Subtotal: '+rp(r.hargaJual*r.qty)+'</span></div>'
+    +'<div style="text-align:right">'
+    +(payMode!=='cash'?'<div class="row-admin-info">Admin: '+adminTxt+'</div>':'<div style="font-size:11px;color:var(--green);font-weight:700">Tidak ada admin</div>')
+    +'<div class="row-laba">Laba: '+rp(res.laba)+'</div></div>';
+}
+
+function renderQuickRows(){
+  const c=document.getElementById('quick-items-container'); if(!c) return;
+  const ratio=getSplitRatio();
+  c.innerHTML=quickRows.map(row=>{
+    const res=row.hargaJual>0&&row.modal>0
+      ?calcItemResult(row.hargaJual,row.modal,row.qty,row.adminPct,row.pendapatanPcs,payMode,ratio)
+      :null;
+    const pendapatanVal=row.pendapatanPcs>0?fmtNum(row.pendapatanPcs):'';
+    return\`<div class="sell-row">
+      <div class="sell-row-header" style="flex-wrap:wrap;gap:8px">
+        <input type="text" value="\${row.nama}" placeholder="Nama barang..."
+          oninput="updateQuickRow('\${row.id}','nama',this.value)"
+          style="flex:2;min-width:140px;padding:9px 12px;border:2px solid var(--border);border-radius:var(--radius-sm);background:#FBF5FF;font-family:'Nunito';font-size:13px;font-weight:600;outline:none">
+        <input type="number" class="qty-input" value="\${row.qty}" min="1"
+          oninput="updateQuickRow('\${row.id}','qty',this.value)"
+          style="width:72px">
+        <button class="btn btn-danger" onclick="hapusQuickRow('\${row.id}')">✕</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--border)">
+        <div style="padding:10px 12px;background:#FBF5FF;border-right:1px solid var(--border);display:flex;flex-direction:column;gap:5px">
+          <label style="font-size:10px;font-weight:800;color:var(--purple);text-transform:uppercase;letter-spacing:.5px">Modal /pcs (Rp)</label>
+          <input type="number" value="\${row.modal||''}" placeholder="45000"
+            oninput="updateQuickRow('\${row.id}','modal',this.value)"
+            style="border:2px solid #E8CAFF;background:#F8F0FF;padding:7px 10px;font-size:14px;font-weight:700;font-family:'JetBrains Mono',monospace;border-radius:8px;width:100%">
+        </div>
+        <div style="padding:10px 12px;background:#FBF5FF;display:flex;flex-direction:column;gap:5px">
+          <label style="font-size:10px;font-weight:800;color:var(--pink);text-transform:uppercase;letter-spacing:.5px">Harga Jual /pcs (Rp)</label>
+          <input type="number" value="\${row.hargaJual||''}" placeholder="180000"
+            oninput="updateQuickRow('\${row.id}','hargaJual',this.value)"
+            style="border:2px solid #FFD6E8;background:#FFF5FA;padding:7px 10px;font-size:14px;font-weight:700;font-family:'JetBrains Mono',monospace;border-radius:8px;width:100%">
+        </div>
+      </div>
+      \${payMode!=='cash'?\`<div style="display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--border)">
+        <div style="padding:10px 12px;background:#FFF8F0;border-right:1px solid var(--border);display:flex;flex-direction:column;gap:5px">
+          <label style="font-size:10px;font-weight:800;color:var(--orange);text-transform:uppercase;letter-spacing:.5px">Admin Shopee %</label>
+          <input type="text" inputmode="decimal" value="\${row.adminPct||''}" placeholder="cth: 2.5"
+            class="quick-admin-pct" data-id="\${row.id}"
+            onchange="updateQuickRow('\${row.id}','adminPct',this.value)"
+            style="border:2px solid #FFCFA0;background:#FFFAF5;padding:7px 10px;font-size:14px;font-weight:700;font-family:'JetBrains Mono',monospace;border-radius:8px;width:100%">
+        </div>
+        <div style="padding:10px 12px;background:#F0FFF4;display:flex;flex-direction:column;gap:5px">
+          <label style="font-size:10px;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:.5px">Pendapatan Shopee /pcs (Rp)</label>
+          <input type="text" inputmode="numeric" value="\${pendapatanVal}" placeholder="cth: 145000"
+            class="quick-admin-pendapatan" data-id="\${row.id}"
+            oninput="guardNumericInput(this)"
+            onblur="fmtInputRp(this);updateQuickRow('\${row.id}','pendapatanPcs',unFmt(this.value))"
+            style="border:2px solid #A7F3D0;background:#F0FFF9;padding:7px 10px;font-size:14px;font-weight:700;font-family:'JetBrains Mono',monospace;border-radius:8px;width:100%">
+        </div>
+      </div>\`:''}
+      <div class="quick-row-footer sell-row-footer" data-id="\${row.id}">
+        <div><span class="row-subtotal">Subtotal: \${row.hargaJual>0?rp(row.hargaJual*row.qty):'—'}</span></div>
+        <div style="text-align:right">
+          <div class="row-laba">Laba: \${res?rp(res.laba):'—'}</div>
+        </div>
+      </div>
+    </div>\`;
+  }).join('');
+  updateTotalJual();
+}
+
+function getQuickTotal(){
+  const ratio=getSplitRatio();
+  let total=0,laba=0,items=0;
+  quickRows.forEach(r=>{
+    if(!r.hargaJual||!r.modal) return;
+    const res=calcItemResult(r.hargaJual,r.modal,r.qty,r.adminPct,r.pendapatanPcs,payMode,ratio);
+    total+=r.hargaJual*r.qty; laba+=res.laba; items+=r.qty;
+  });
+  return {total,laba,items};
+}
+
+function simpanTransaksiAuto(){
+  if(jualMode==='cepat') simpanTransaksiCepat();
+  else simpanTransaksi();
+}
+
+async function simpanTransaksiCepat(){
+  const tanggal=document.getElementById('j-tanggal').value;
+  if(!tanggal){toast('Pilih tanggal!','red');return}
+  const ratio=getSplitRatio();
+  let total=0,laba=0,adminTotal=0;
+  const items=[];
+  for(const row of quickRows){
+    if(!row.nama.trim()||!row.hargaJual||!row.modal) continue;
+    const res=calcItemResult(row.hargaJual,row.modal,row.qty,row.adminPct,row.pendapatanPcs,payMode,ratio);
+    total+=row.hargaJual*row.qty; laba+=res.laba; adminTotal+=res.adminRp;
+    items.push({
+      produkId:'quick_'+genId(), nama:row.nama.trim(),
+      qty:row.qty, hargaJual:row.hargaJual, modalTotal:row.modal,
+      adminPct:parseFloat(res.adminPctActual.toFixed(2)),
+      adminRp:res.adminRp, pendapatanPcs:row.pendapatanPcs,
+      subtotal:row.hargaJual*row.qty, laba:res.laba,
+      isQuick:true
+    });
+  }
+  if(!items.length){toast('Isi minimal 1 item dengan nama, modal & harga jual!','red');return}
+  let pay={};
+  if(payMode==='shopee') pay={mode:'shopee',shopee:total,cash:0};
+  else if(payMode==='cash') pay={mode:'cash',shopee:0,cash:total};
+  else{
+    const s=parseFloat(document.getElementById('split-shopee').value||0);
+    const c=parseFloat(document.getElementById('split-cash').value||0);
+    if(Math.abs((s+c)-total)>1){toast('Total split tidak sesuai!','red');return}
+    pay={mode:'split',shopee:s,cash:c};
+  }
+  const order=document.getElementById('j-order').value.trim();
+  transaksiJual.unshift({
+    id:genId(), tanggal, order:order||'-',
+    items, total, laba, adminTotal, pay,
+    isQuick:true
+  });
+  quickRows=[]; initJual(); setJualMode('cepat');
+  await saveData('jual');
+  updHeaderStats();
+  toast('Transaksi cepat tersimpan! ⚡','orange');
 }
 
 // ── DUPLIKAT PRODUK ─────────────────────────────
